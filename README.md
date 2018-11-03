@@ -6,4 +6,4 @@ that consist the subtitle and format them into one
 
 Python 2.7.13
 
-@author: Dimitris Dimopoulos
+Dimitris Dimopoulos 2017-2018
