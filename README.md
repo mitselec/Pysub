@@ -1,4 +1,4 @@
-# Pysub
+# PySub
 
 Python Subtitle downloader
 This script downloads the metadata of a Youtube video
