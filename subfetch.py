@@ -13,20 +13,53 @@ Python 2.7.13
 """
 
 import urllib2
-import os
+import os,sys
 from datetime import time, timedelta
 
+#length of string of the timestamp used later in the program
+timestamp_length =12
 
 # file to be written to
-file = "downloaded_file.xml"
+file = "subtitle_file.xml"
+file2 = "subtitle_option.xml"
 
 #Ask user input
-#Right now the default option is english
+sub_var = raw_input("Please enter the youtube link: ")
 #TODO:Find out if there is even subtitles for the video and give the user a choice
 #It can be found from https://video.google.com/timedtext?type=list&v= +VideoId
 #Or the Youtube API : https://www.youtube.com/api/timedtext?type=list&v=
-sub_var = raw_input("Please enter the youtube link: ")
-url = "http://video.google.com/timedtext?lang=en&v="+sub_var.split("=")[1]
+#TODO:Save the subtitles with the name of the video 
+
+#Giving the youtube link and searching for available subtitles
+#Available subtitles will be printed as an option for the user
+#If there are no available subtitles, the program will close.
+url = "https://video.google.com/timedtext?type=list&v="+sub_var.split("=")[1]
+response = urllib2.urlopen(url)
+fh = open(file2,"w")
+fh.write(response.read())
+fh.close()
+
+with open(file2,"rb") as infile:
+    lines = infile.readlines()
+infile.close()
+
+languages =[]
+
+if "<track" in lines == False:
+    os.remove("subtitle_option.xml") #Delete the temporary file
+    sys.exit("No available subtitles found!") 
+else:
+    options = lines[0].split('<track')
+language =[]
+for i in range(1,len(options)):
+    language.append(options[i].split('lang_code="')[1].split('"')[0])
+    
+print "Available languages\n" 
+for i in range(len(language)):
+    print str(i)+"."+language[i]+"\n"
+lang_input = raw_input("Please press the corresponding number: ")
+
+url = "http://video.google.com/timedtext?lang="+language[int(lang_input)]+"&v="+sub_var.split("=")[1]
 response = urllib2.urlopen(url)
 
 #open the file for writing
@@ -76,14 +109,14 @@ for sentence_part in sentence:
     #etc
     fh.write(str(sentence_counter) +'\n')
     #Adding missing digits to complete the timestamp string
-    if len('0'+str(t_start)[:-3]) < 12:
+    if len('0'+str(t_start)[:-3]) < timestamp_length:
         fh.write('0'+str(t_start)+'.000'+' --> '+'0'+str(t_end)[:-3]+'\n')
-    elif len('0'+str(t_end)[:-3]) < 12:
+    elif len('0'+str(t_end)[:-3]) < timestamp_length:
         fh.write('0'+str(t_start)[:-3]+' --> '+'0'+str(t_end)+'.000'+'\n')
     else:
         fh.write('0'+str(t_start)[:-3]+' --> '+'0'+str(t_end)[:-3]+'\n')
-    fh.write(sentence_part.split('>')[1]+'\n')
+    fh.write(sentence_part.split('">')[1]+'\n')
     fh.write("\n")
 fh.close()
-#Delete the temporary file created       
-os.remove("downloaded_file.xml")
+#Delete the temporary files created       
+os.remove("subtitle_file.xml")
