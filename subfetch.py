@@ -1,122 +1,241 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jul 18 16:48:46 2017
-First Working Version Concluded on Wed Oct 31 2018
+Python Subtitle downloader for YouTube videos.
 
-Python Subtitle downloader
-This script downloads the metadata of a Youtube video
-that consist the subtitle and format them into one
+Rewritten for Python 3 (tested on 3.11+) and the modern YouTube regime.
+The legacy video.google.com/timedtext endpoint used by the original
+2017 script was silently shut down by YouTube (it now returns an empty
+body), so this version uses the InnerTube get_transcript API through
+the youtube-transcript-api package, which is updated when YouTube
+changes its internals.
 
-Python 2.7.13
+Usage:
+    pip install youtube-transcript-api
+    python subfetch.py                          # prompts for the link
+    python subfetch.py <youtube url or video id>
 
-@author: Dimitris Dimopoulos
+A self-contained Windows build is rebuildable with PyInstaller
+(see the README "Distributable exe" section). It embeds this script
+and its youtube-transcript-api dependency, so end users without
+Python can run dist\\subfetch.exe directly.
+
+Requires: Python 3.9+, youtube-transcript-api 1.0+
+
+@author: Dimitris Dimopoulos (original, 2017-2018)
 """
 
-import urllib2
-import os,sys
-from datetime import time, timedelta
+import json     # parsing the oEmbed response for the video title
+import re
+import sys
+import urllib.request
 
-#length of string of the timestamp used later in the program
-timestamp_length =12
+try:
+    # Kept as an instance of the package's own error module so that
+    # unexpected upstream changes surface as a clean message (see
+    # the generic handler in main()) instead of a traceback.
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import (
+        NoTranscriptFound,
+        TranscriptsDisabled,
+        VideoUnavailable,
+    )
+except ImportError:
+    sys.exit(
+        "youtube-transcript-api is not installed.\n"
+        "Install it with:  pip install youtube-transcript-api"
+    )
 
-# file to be written to
-file = "subtitle_file.xml"
-file2 = "subtitle_option.xml"
+# Fallback output file, kept identical to the original program's
+# behavior when the video title cannot be determined via oEmbed
+OUTPUT_FILE = "subtitle.srt"
 
-#Ask user input
-sub_var = raw_input("Please enter the youtube link: ")
-#TODO:Find out if there is even subtitles for the video and give the user a choice
-#It can be found from https://video.google.com/timedtext?type=list&v= +VideoId
-#Or the Youtube API : https://www.youtube.com/api/timedtext?type=list&v=
-#TODO:Save the subtitles with the name of the video 
 
-#Giving the youtube link and searching for available subtitles
-#Available subtitles will be printed as an option for the user
-#If there are no available subtitles, the program will close.
-url = "https://video.google.com/timedtext?type=list&v="+sub_var.split("=")[1]
-response = urllib2.urlopen(url)
-fh = open(file2,"w")
-fh.write(response.read())
-fh.close()
+def extract_video_id(text):
+    """Extract the 11-character video id from any YouTube link form.
 
-with open(file2,"rb") as infile:
-    lines = infile.readlines()
-infile.close()
+    Handles watch?v=, youtu.be/, shorts/, embed/ and v/ links, bare video
+    ids, and URLs polluted with extra parameters such as &list=... .
+    """
+    text = text.strip()
+    if not text:
+        return None
+    # Standalone video id
+    if re.fullmatch(r"[0-9A-Za-z_-]{11}", text):
+        return text
+    patterns = [
+        r"(?:youtu\.be/)([0-9A-Za-z_-]{11})",
+        r"(?:\?|\&|/)v=([0-9A-Za-z_-]{11})",
+        r"/shorts/([0-9A-Za-z_-]{11})",
+        r"/embed/([0-9A-Za-z_-]{11})",
+        r"/live/([0-9A-Za-z_-]{11})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+    return None
 
-languages =[]
 
-if "<track" in lines == False:
-    os.remove("subtitle_option.xml") #Delete the temporary file
-    sys.exit("No available subtitles found!") 
-else:
-    options = lines[0].split('<track')
-language =[]
-for i in range(1,len(options)):
-    language.append(options[i].split('lang_code="')[1].split('"')[0])
-    
-print "Available languages\n" 
-for i in range(len(language)):
-    print str(i)+"."+language[i]+"\n"
-lang_input = raw_input("Please press the corresponding number: ")
+def get_transcript_list(video_id):
+    """Return the list of available transcripts, or None if there are none."""
+    api = YouTubeTranscriptApi()
+    return api.list(video_id)
 
-url = "http://video.google.com/timedtext?lang="+language[int(lang_input)]+"&v="+sub_var.split("=")[1]
-response = urllib2.urlopen(url)
 
-#open the file for writing
-fh = open(file, "w")
+def choose_language(transcript_list):
+    """Print the available transcript languages and ask the user to pick one.
 
-# read from request while writing to file
-fh.write(response.read())
-fh.close()
+    Returns the transcript object chosen by the user. Falls back to English
+    if present (or to the first manual transcript) when the user just
+    presses Enter.
+    """
+    transcripts = list(transcript_list)
+    if not transcripts:
+        return None
 
-with open(file,"rb") as infile:
-    lines = infile.readlines()
-infile.close()
+    manual = [t for t in transcripts if not t.is_generated]
+    generated = [t for t in transcripts if t.is_generated]
 
-#Joining the text into a single string to segment easier
-line_str = ''.join(map(str, lines))
-#Replacing special characters and spliting the sentences
-spec_char = ["&amp;#39;","&amp;quot;","&amp;lt;","&amp;gt;","&amp;"]
-rep_char = ["'",'"',"<",">","&"]
-for replacement in spec_char:
-    if replacement in line_str:
-        line_str = line_str.replace(replacement,rep_char[spec_char.index(replacement)]) 
-sentence = line_str.split("<transcript>")[1].split("</text>")[:-1]
+    english = [t for t in manual if t.language_code.startswith("en")]
+    default = english[0] if english else (manual[0] if manual else generated[0])
 
-#Creating the subtitle file
-file = "subtitle.srt"
-fh = open(file,"w")
+    print("Available languages:\n")
+    for i, t in enumerate(transcripts):
+        kind = "auto-generated" if t.is_generated else "manual"
+        is_default = " [default]" if t is default else ""
+        print("  {0}. {1}  ({2}, {3}){4}".format(
+            i + 1, t.language_code, t.language, kind, is_default))
 
-sentence_counter =0
-time_segment = []
-for sentence_part in sentence:
-    sentence_counter +=1
-    #Setting timestamps
-    t = time(0,0,0,0)
-    time_segment = sentence_part.split('>')[0].split('"')[1::2]
-    #Forcing 3 decimals
-    time_segment[0] = str("%5.3f" %float(time_segment[0]))
-    time_segment[1] = str("%5.3f" %float(time_segment[1]))   
-    t_start = timedelta(seconds = int(time_segment[0].split(".")[0]),milliseconds = int(time_segment[0].split(".")[1]))
-    t_end = t_start +timedelta(seconds = int(time_segment[1].split(".")[0]),milliseconds = int(time_segment[1].split(".")[1]))
-    #Writing Data into the subtitle file
-    #Using the matroska format, for example
-    #1
-    #00:00:05.123 --> 00:00:10.456
-    #Subtitle text
-    #empty line
-    #2
-    #etc
-    fh.write(str(sentence_counter) +'\n')
-    #Adding missing digits to complete the timestamp string
-    if len('0'+str(t_start)[:-3]) < timestamp_length:
-        fh.write('0'+str(t_start)+'.000'+' --> '+'0'+str(t_end)[:-3]+'\n')
-    elif len('0'+str(t_end)[:-3]) < timestamp_length:
-        fh.write('0'+str(t_start)[:-3]+' --> '+'0'+str(t_end)+'.000'+'\n')
+    choice = input(
+        "\nPlease press the corresponding number "
+        "[Enter = {}]: ".format(default.language_code)
+    ).strip()
+
+    if not choice:
+        return default
+    try:
+        index = int(choice) - 1
+        if not 0 <= index < len(transcripts):
+            raise ValueError
+    except ValueError:
+        print("Invalid choice, using {}.".format(default.language_code))
     else:
-        fh.write('0'+str(t_start)[:-3]+' --> '+'0'+str(t_end)[:-3]+'\n')
-    fh.write(sentence_part.split('">')[1]+'\n')
-    fh.write("\n")
-fh.close()
-#Delete the temporary files created       
-os.remove("subtitle_file.xml")
+        default = transcripts[index]
+    return default
+
+
+def fetch_transcript(transcript):
+    """Fetch the transcript snippets for the chosen language."""
+    return transcript.fetch()
+
+
+def format_srt_time(seconds):
+    """Format a float number of seconds as an SRT timestamp HH:MM:SS,mmm."""
+    milliseconds = int(round(seconds * 1000))
+    hours, rest = divmod(milliseconds, 3600000)
+    minutes, rest = divmod(rest, 60000)
+    secs, millis = divmod(rest, 1000)
+    return "{0:02d}:{1:02d}:{2:02d},{3:03d}".format(
+        hours, minutes, secs, millis)
+
+
+def write_srt(fetched_transcript, filename=OUTPUT_FILE):
+    """Convert the fetched transcript into an SRT file.
+
+    Same matroska-style SRT layout the original script produced:
+        1
+        00:00:05,123 --> 00:00:10,456
+        Subtitle text
+        (empty line)
+        2
+        ...
+    """
+    counter = 0
+    with open(filename, "w", encoding="utf-8") as fh:
+        for snippet in fetched_transcript:
+            counter += 1
+            start = format_srt_time(snippet.start)
+            end = format_srt_time(snippet.start + snippet.duration)
+            fh.write("{0}\n".format(counter))
+            fh.write("{0} --> {1}\n".format(start, end))
+            fh.write(snippet.text.replace("\n", " ") + "\n")
+            fh.write("\n")
+    return filename, counter
+
+
+def make_srt_safe_name(text):
+    """Turn a video title into a safe filename."""
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "", text).strip()
+    return cleaned or "subtitle"
+
+
+def get_video_title(video_id):
+    """Try to get the video title through YouTube's public oEmbed endpoint.
+
+    Returns None on any failure (private videos, network issues, ...) so the
+    caller can fall back to the generic name.
+    """
+    url = ("https://www.youtube.com/oembed?url=https://www.youtube.com/"
+           "watch%3Fv%3D" + video_id + "&format=json")
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8")).get("title")
+    except (OSError, ValueError):
+        return None
+
+
+def main():
+    # Windows consoles default to cp1252 and crash printing characters
+    # such as the ♪ notes that appear in subtitle text; don't let any
+    # print kill the run when errors="replace" can handle it instead
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+
+    if len(sys.argv) > 1:
+        sub_var = " ".join(sys.argv[1:])
+    else:
+        sub_var = input("Please enter the youtube link: ")
+
+    video_id = extract_video_id(sub_var)
+    if not video_id:
+        sys.exit("Could not extract a video id from that link!")
+
+    print("Video id: {0}\n".format(video_id))
+
+    try:
+        transcript_list = get_transcript_list(video_id)
+    except TranscriptsDisabled:
+        sys.exit("No available subtitles found! (subtitles are disabled "
+                 "for this video)")
+    except VideoUnavailable:
+        sys.exit("This video is unavailable or does not exist.")
+    except NoTranscriptFound:
+        sys.exit("No available subtitles found!")
+    except Exception as exc:
+        # Anything unexpected (rate limiting by YouTube, network problems,
+        # a new upstream API change, ...) should not crash with a traceback
+        sys.exit("Could not retrieve the subtitle list: {0}".format(exc))
+
+    transcript = choose_language(transcript_list)
+    if transcript is None:
+        sys.exit("No available subtitles found!")
+
+    print("\nFetching {0} ({1})...".format(
+        transcript.language, transcript.language_code))
+    fetched = fetch_transcript(transcript)
+
+    title = get_video_title(video_id)
+    if title:
+        # Save with the video's name (the old "TODO: Save the subtitles
+        # with the name of the video" from the 2017 script)
+        filename = make_srt_safe_name(title) + ".srt"
+        print("Video title: {0}".format(title))
+    else:
+        filename = OUTPUT_FILE
+
+    filename, count = write_srt(fetched, filename)
+    print("Saved {0} subtitle segments to: {1}".format(count, filename))
+
+
+if __name__ == "__main__":
+    main()
