@@ -1,0 +1,17 @@
+# Project configuration.
+# [tool.ruff] also configures the "ruff" command used by CI (.github/workflows/ci.yml).
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports/variables, etc.)
+    "I",   # import ordering - pyproject.toml itself must stay sorted
+    "UP",  # outdated Python 2/3 constructs that pyupgrade would fix
+]
+
+[tool.ruff.lint.per-file-ignores]
+# subfetch.py imports private API for the error classes
+"subfetch.py" = ["PLC2701"]

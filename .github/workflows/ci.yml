@@ -1,0 +1,72 @@
+# PySub CI pipeline
+#
+# Two stages, in the GitLab CI sense:
+#   1. lint   - static analysis of the Python source (ruff)
+#   2. build  - freeze the program into a self-contained Windows exe
+#               with PyInstaller and upload it as a downloadable artifact
+#
+# The build stage only runs if the lint stage passes ("needs: lint").
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch: # allows manual runs from the Actions tab
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install linter
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check .
+
+  build:
+    name: Build Windows exe
+    needs: lint # staged: only builds after lint has passed
+    runs-on: windows-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build exe with PyInstaller
+        run: python -m PyInstaller --onefile --console --name subfetch subfetch.py
+
+      - name: Smoke test the exe (lists languages, saves EN subs)
+        run: |
+          "https://www.youtube.com/watch?v=dQw4w9WgXcQ`n1" | dist\subfetch.exe *> stdout.txt
+          Get-Content stdout.txt
+          # assert the subtitle file was produced with actual content
+          $srt = Get-ChildItem ~ -Filter *.srt -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $srt) { $srt = Get-ChildItem . -Filter *.srt | Select-Object -First 1 }
+          if (-not $srt -or $srt.Length -lt 100) { throw "exe smoke test failed" }
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: subfetch-exe
+          path: dist/subfetch.exe
+          retention-days: 14

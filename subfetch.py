@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Python Subtitle downloader for YouTube videos.
 
@@ -24,7 +23,7 @@ Requires: Python 3.9+, youtube-transcript-api 1.0+
 @author: Dimitris Dimopoulos (original, 2017-2018)
 """
 
-import json     # parsing the oEmbed response for the video title
+import json  # parsing the oEmbed response for the video title
 import re
 import sys
 import urllib.request
@@ -103,12 +102,11 @@ def choose_language(transcript_list):
     for i, t in enumerate(transcripts):
         kind = "auto-generated" if t.is_generated else "manual"
         is_default = " [default]" if t is default else ""
-        print("  {0}. {1}  ({2}, {3}){4}".format(
-            i + 1, t.language_code, t.language, kind, is_default))
+        print(f"  {i + 1}. {t.language_code}  ({t.language}, {kind}){is_default}")
 
     choice = input(
         "\nPlease press the corresponding number "
-        "[Enter = {}]: ".format(default.language_code)
+        f"[Enter = {default.language_code}]: "
     ).strip()
 
     if not choice:
@@ -118,7 +116,7 @@ def choose_language(transcript_list):
         if not 0 <= index < len(transcripts):
             raise ValueError
     except ValueError:
-        print("Invalid choice, using {}.".format(default.language_code))
+        print(f"Invalid choice, using {default.language_code}.")
     else:
         default = transcripts[index]
     return default
@@ -135,8 +133,7 @@ def format_srt_time(seconds):
     hours, rest = divmod(milliseconds, 3600000)
     minutes, rest = divmod(rest, 60000)
     secs, millis = divmod(rest, 1000)
-    return "{0:02d}:{1:02d}:{2:02d},{3:03d}".format(
-        hours, minutes, secs, millis)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
 def write_srt(fetched_transcript, filename=OUTPUT_FILE):
@@ -156,8 +153,8 @@ def write_srt(fetched_transcript, filename=OUTPUT_FILE):
             counter += 1
             start = format_srt_time(snippet.start)
             end = format_srt_time(snippet.start + snippet.duration)
-            fh.write("{0}\n".format(counter))
-            fh.write("{0} --> {1}\n".format(start, end))
+            fh.write(f"{counter}\n")
+            fh.write(f"{start} --> {end}\n")
             fh.write(snippet.text.replace("\n", " ") + "\n")
             fh.write("\n")
     return filename, counter
@@ -200,7 +197,7 @@ def main():
     if not video_id:
         sys.exit("Could not extract a video id from that link!")
 
-    print("Video id: {0}\n".format(video_id))
+    print(f"Video id: {video_id}\n")
 
     try:
         transcript_list = get_transcript_list(video_id)
@@ -214,14 +211,13 @@ def main():
     except Exception as exc:
         # Anything unexpected (rate limiting by YouTube, network problems,
         # a new upstream API change, ...) should not crash with a traceback
-        sys.exit("Could not retrieve the subtitle list: {0}".format(exc))
+        sys.exit(f"Could not retrieve the subtitle list: {exc}")
 
     transcript = choose_language(transcript_list)
     if transcript is None:
         sys.exit("No available subtitles found!")
 
-    print("\nFetching {0} ({1})...".format(
-        transcript.language, transcript.language_code))
+    print(f"\nFetching {transcript.language} ({transcript.language_code})...")
     fetched = fetch_transcript(transcript)
 
     title = get_video_title(video_id)
@@ -229,12 +225,12 @@ def main():
         # Save with the video's name (the old "TODO: Save the subtitles
         # with the name of the video" from the 2017 script)
         filename = make_srt_safe_name(title) + ".srt"
-        print("Video title: {0}".format(title))
+        print(f"Video title: {title}")
     else:
         filename = OUTPUT_FILE
 
     filename, count = write_srt(fetched, filename)
-    print("Saved {0} subtitle segments to: {1}".format(count, filename))
+    print(f"Saved {count} subtitle segments to: {filename}")
 
 
 if __name__ == "__main__":
