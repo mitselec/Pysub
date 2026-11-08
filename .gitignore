@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# PyInstaller build working directory (the dist binaries stay committed)
+build/
+
+# Test output
+stdout.txt

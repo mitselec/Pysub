@@ -13,10 +13,12 @@ Usage:
     python subfetch.py                          # prompts for the link
     python subfetch.py <youtube url or video id>
 
-A self-contained Windows build is rebuildable with PyInstaller
-(see the README "Distributable exe" section). It embeds this script
-and its youtube-transcript-api dependency, so end users without
-Python can run dist\\subfetch.exe directly.
+A self-contained build for your platform is rebuildable with PyInstaller
+(see the README "Distributable binaries" section): a Windows exe built on
+Windows, a Linux executable built on Linux (or WSL). A build embeds this
+script and its youtube-transcript-api dependency, so end users without
+Python can run the binary directly. The CI workflow builds both on every
+run.
 
 Requires: Python 3.9+, youtube-transcript-api 1.0+
 
@@ -29,6 +31,22 @@ import sys
 import urllib.request
 
 
+def wait_for_quit():
+    """Ask the user to press 'q' before the program exits.
+
+    Falls through silently when stdin is closed or exhausted (e.g. the
+    exe is launched from a script or CI pipeline with redirected input),
+    so a successful run still exits with code 0.
+    """
+    try:
+        while True:
+            key = input("\nPress 'q' to quit: ").strip().lower()
+            if key == "q":
+                break
+    except (EOFError, OSError):
+        pass
+
+
 def fail(message):
     """Print an error message and wait for the user to confirm quitting.
 
@@ -36,10 +54,14 @@ def fail(message):
     the user has time to read the error before closing the window.
     """
     print(f"ERROR: {message}")
-    while True:
-        key = input("\nPress 'q' to quit: ").strip().lower()
-        if key == "q":
-            sys.exit(1)
+    try:
+        while True:
+            key = input("\nPress 'q' to quit: ").strip().lower()
+            if key == "q":
+                break
+    except (EOFError, OSError):
+        pass
+    sys.exit(1)
 
 
 try:
@@ -249,10 +271,7 @@ def main():
     # Keep the console window open so the user can read the output
     # (important when running the compiled .exe, where the window
     # would otherwise close immediately).
-    while True:
-        key = input("\nPress 'q' to quit: ").strip().lower()
-        if key == "q":
-            break
+    wait_for_quit()
 
 
 if __name__ == "__main__":

@@ -2,8 +2,9 @@
 #
 # Two stages, in the GitLab CI sense:
 #   1. lint   - static analysis of the Python source (ruff)
-#   2. build  - freeze the program into a self-contained Windows exe
-#               with PyInstaller and upload it as a downloadable artifact
+#   2. build  - freeze the program into a self-contained binary with
+#               PyInstaller (a Windows exe and a Linux executable)
+#               and upload them as downloadable artifacts
 #
 # The build stage only runs if the lint stage passes ("needs: lint").
 
@@ -36,9 +37,19 @@ jobs:
         run: ruff check .
 
   build:
-    name: Build Windows exe
+    name: Build (${{ matrix.os }})
     needs: lint # staged: only builds after lint has passed
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: subfetch-exe-windows
+            executable: subfetch.exe
+          - os: ubuntu-latest
+            artifact: subfetch-exe-linux
+            executable: subfetch
     steps:
       - name: Check out code
         uses: actions/checkout@v7
@@ -52,10 +63,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
-      - name: Build exe with PyInstaller
+      - name: Build binary with PyInstaller
         run: python -m PyInstaller --onefile --console --name subfetch subfetch.py
 
-      - name: Smoke test the exe (lists languages, saves EN subs)
+      # --- Windows smoke test ---
+      - name: Smoke test the Windows binary (lists languages, saves EN subs)
+        if: runner.os == 'Windows'
         run: |
           "https://www.youtube.com/watch?v=dQw4w9WgXcQ`n1" | dist\subfetch.exe *> stdout.txt
           Get-Content stdout.txt
@@ -64,9 +77,19 @@ jobs:
           if (-not $srt) { $srt = Get-ChildItem . -Filter *.srt | Select-Object -First 1 }
           if (-not $srt -or $srt.Length -lt 100) { throw "exe smoke test failed" }
 
-      - name: Upload exe artifact
+      # --- Linux smoke test ---
+      - name: Smoke test the Linux binary (lists languages, saves EN subs)
+        if: runner.os == 'Linux'
+        run: |
+          printf 'https://www.youtube.com/watch?v=dQw4w9WgXcQ\n1\n' | dist/subfetch > stdout.txt 2>&1
+          cat stdout.txt
+          # assert the subtitle file was produced with actual content
+          srt=$(find . -maxdepth 1 -name '*.srt' | head -n 1)
+          if [ -z "$srt" ] || [ ! -s "$srt" ]; then echo "binary smoke test failed"; exit 1; fi
+
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:
-          name: subfetch-exe
-          path: dist/subfetch.exe
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.executable }}
           retention-days: 14
