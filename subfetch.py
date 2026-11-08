@@ -28,6 +28,20 @@ import re
 import sys
 import urllib.request
 
+
+def fail(message):
+    """Print an error message and wait for the user to confirm quitting.
+
+    Keeps the console window open (when running the compiled .exe) so
+    the user has time to read the error before closing the window.
+    """
+    print(f"ERROR: {message}")
+    while True:
+        key = input("\nPress 'q' to quit: ").strip().lower()
+        if key == "q":
+            sys.exit(1)
+
+
 try:
     # Kept as an instance of the package's own error module so that
     # unexpected upstream changes surface as a clean message (see
@@ -39,7 +53,7 @@ try:
         VideoUnavailable,
     )
 except ImportError:
-    sys.exit(
+    fail(
         "youtube-transcript-api is not installed.\n"
         "Install it with:  pip install youtube-transcript-api"
     )
@@ -195,27 +209,27 @@ def main():
 
     video_id = extract_video_id(sub_var)
     if not video_id:
-        sys.exit("Could not extract a video id from that link!")
+        fail("Could not extract a video id from that link!")
 
     print(f"Video id: {video_id}\n")
 
     try:
         transcript_list = get_transcript_list(video_id)
     except TranscriptsDisabled:
-        sys.exit("No available subtitles found! (subtitles are disabled "
-                 "for this video)")
+        fail("No available subtitles found! (subtitles are disabled "
+             "for this video)")
     except VideoUnavailable:
-        sys.exit("This video is unavailable or does not exist.")
+        fail("This video is unavailable or does not exist.")
     except NoTranscriptFound:
-        sys.exit("No available subtitles found!")
+        fail("No available subtitles found!")
     except Exception as exc:
         # Anything unexpected (rate limiting by YouTube, network problems,
         # a new upstream API change, ...) should not crash with a traceback
-        sys.exit(f"Could not retrieve the subtitle list: {exc}")
+        fail(f"Could not retrieve the subtitle list: {exc}")
 
     transcript = choose_language(transcript_list)
     if transcript is None:
-        sys.exit("No available subtitles found!")
+        fail("No available subtitles found!")
 
     print(f"\nFetching {transcript.language} ({transcript.language_code})...")
     fetched = fetch_transcript(transcript)
@@ -231,6 +245,14 @@ def main():
 
     filename, count = write_srt(fetched, filename)
     print(f"Saved {count} subtitle segments to: {filename}")
+
+    # Keep the console window open so the user can read the output
+    # (important when running the compiled .exe, where the window
+    # would otherwise close immediately).
+    while True:
+        key = input("\nPress 'q' to quit: ").strip().lower()
+        if key == "q":
+            break
 
 
 if __name__ == "__main__":
